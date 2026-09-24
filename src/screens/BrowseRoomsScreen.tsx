@@ -1,66 +1,159 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
   View, 
   FlatList, 
   StyleSheet, 
-  SafeAreaView, 
   StatusBar, 
   Text, 
   TextInput,
-  Pressable
+  Pressable,
+  ScrollView,
+  ActivityIndicator,
+  Modal,
+  Switch
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { mockRooms } from '../data/mockRooms';
 import { RoomCard } from '../components/RoomCard';
 import { Room, RootStackParamList } from '../types';
+import { subscribeToRooms } from '../services/roomService';
+import { useTodayRoomSchedules } from '../hooks/useTodayRoomSchedules';
+import { getRoomStatus, RoomStatus } from '../utils/roomUtils';
 
-type FilterStatus = 'ALL' | 'AVAILABLE' | 'BOOKED';
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'BrowseRooms'>;
+
+const BUILDINGS = ['ALL', 'A', 'B', 'C', 'V'];
+const CAPACITIES = [0, 2, 4, 6, 8, 10, 12, 15, 20];
+const EQUIPMENTS = ['Máy chiếu', 'Bảng trắng', 'Máy tính cấu hình cao', 'Điều hòa'];
 
 export const BrowseRoomsScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
+  const insets = useSafeAreaInsets();
+  
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const todaySchedules = useTodayRoomSchedules();
+  
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>('ALL');
+  
+  // Filter States
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [filterBuilding, setFilterBuilding] = useState<string>('ALL');
+  const [filterCapacity, setFilterCapacity] = useState<number>(0);
+  const [filterEquipments, setFilterEquipments] = useState<string[]>([]);
+  const [filterStatus, setFilterStatus] = useState<RoomStatus | 'ALL'>('ALL');
+  
+  // Force re-render every minute to keep room status up to date
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 60000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const handleRoomPress = (room: Room) => {
+  useEffect(() => {
+    const unsubscribe = subscribeToRooms(
+      (data) => {
+        setRooms(data);
+        setIsLoading(false);
+      },
+      (err) => {
+        setError('Không thể tải danh sách phòng.');
+        setIsLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const handleRoomPress = useCallback((room: Room) => {
     navigation.navigate('RoomDetail', { room });
+  }, [navigation]);
+
+  const toggleEquipment = (eq: string) => {
+    setFilterEquipments(prev => 
+      prev.includes(eq) ? prev.filter(e => e !== eq) : [...prev, eq]
+    );
   };
 
-
   const filteredRooms = useMemo(() => {
-    return mockRooms.filter((room) => {
+    return rooms.filter((room) => {
+      const roomStatus = getRoomStatus(room, todaySchedules[room.id] || []);
+      
       // 1. Search condition
       const lowerQuery = searchQuery.toLowerCase();
       const matchesSearch = 
         room.name.toLowerCase().includes(lowerQuery) || 
         room.building.toLowerCase().includes(lowerQuery);
 
-      // 2. Filter condition
-      let matchesFilter = true;
-      if (filterStatus === 'AVAILABLE') {
-        matchesFilter = room.available === true;
-      } else if (filterStatus === 'BOOKED') {
-        matchesFilter = room.available === false;
-      }
+      // 2. Status condition
+      const matchesStatus = filterStatus === 'ALL' || roomStatus === filterStatus;
 
-      // Combine conditions
-      return matchesSearch && matchesFilter;
+      // 3. Building condition
+      const buildingCode = room.buildingCode || (
+        room.building.includes('Khu V') ? 'V' :
+        room.building.includes('Tòa C') ? 'C' :
+        room.building.includes('Tòa B') ? 'B' :
+        room.building.includes('Tòa A') ? 'A' : ''
+      );
+      const matchesBuilding = filterBuilding === 'ALL' || buildingCode === filterBuilding;
+      
+      // 4. Capacity condition
+      const matchesCapacity = filterCapacity === 0 || room.capacity >= filterCapacity;
+
+      // 5. Equipment condition
+      const matchesEquip = filterEquipments.every(eq => room.facilities.includes(eq));
+
+      return matchesSearch && matchesStatus && matchesBuilding && matchesCapacity && matchesEquip;
     });
-  }, [searchQuery, filterStatus]);
+  }, [rooms, searchQuery, filterStatus, filterBuilding, filterCapacity, filterEquipments, todaySchedules, tick]);
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyTitle}>Không tìm thấy phòng phù hợp</Text>
-      <Text style={styles.emptySubtitle}>Hãy thử từ khóa hoặc bộ lọc khác.</Text>
-    </View>
-  );
+  const renderEmptyState = () => {
+    if (rooms.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>Chưa có dữ liệu phòng.</Text>
+          <Text style={styles.emptySubtitle}>Không có phòng nào được lưu trên hệ thống.</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyTitle}>Không tìm thấy phòng phù hợp</Text>
+        <Text style={styles.emptySubtitle}>Hãy thử từ khóa hoặc bộ lọc khác.</Text>
+      </View>
+    );
+  };
+
+  const renderItem = useCallback(({ item }: { item: Room }) => (
+    <RoomCard 
+      room={item} 
+      status={getRoomStatus(item, todaySchedules[item.id] || [])} 
+      onPress={handleRoomPress} 
+    />
+  ), [todaySchedules, handleRoomPress]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Study Rooms</Text>
+        <View style={styles.headerTop}>
+          <Text style={styles.headerTitle}>Study Rooms</Text>
+          <View style={styles.navButtonsContainer}>
+            <Pressable 
+              style={styles.navButton}
+              onPress={() => navigation.navigate('MyBookings')}
+            >
+              <Text style={styles.navButtonText}>Lịch đặt</Text>
+            </Pressable>
+            <Pressable 
+              style={[styles.navButton, styles.navButtonAlt]}
+              onPress={() => navigation.navigate('Profile')}
+            >
+              <Text style={styles.navButtonTextAlt}>Hồ sơ</Text>
+            </Pressable>
+          </View>
+        </View>
         
         {/* Search Input */}
         <View style={styles.searchContainer}>
@@ -75,42 +168,111 @@ export const BrowseRoomsScreen: React.FC = () => {
           />
         </View>
 
-        {/* Filters */}
-        <View style={styles.filterContainer}>
-          <Pressable 
-            style={[styles.filterButton, filterStatus === 'ALL' && styles.filterButtonActive]}
-            onPress={() => setFilterStatus('ALL')}
-          >
-            <Text style={[styles.filterText, filterStatus === 'ALL' && styles.filterTextActive]}>Tất cả</Text>
-          </Pressable>
-          
-          <Pressable 
-            style={[styles.filterButton, filterStatus === 'AVAILABLE' && styles.filterButtonActive]}
-            onPress={() => setFilterStatus('AVAILABLE')}
-          >
-            <Text style={[styles.filterText, filterStatus === 'AVAILABLE' && styles.filterTextActive]}>Có thể đặt</Text>
-          </Pressable>
-          
-          <Pressable 
-            style={[styles.filterButton, filterStatus === 'BOOKED' && styles.filterButtonActive]}
-            onPress={() => setFilterStatus('BOOKED')}
-          >
-            <Text style={[styles.filterText, filterStatus === 'BOOKED' && styles.filterTextActive]}>Đã đặt</Text>
+        {/* Quick Filters */}
+        <View style={styles.quickFilterRow}>
+          <Pressable style={styles.filterMenuButton} onPress={() => setFilterModalVisible(true)}>
+            <Text style={styles.filterMenuButtonText}>⚙️ Bộ lọc nâng cao</Text>
           </Pressable>
         </View>
       </View>
 
-      <FlatList
-        data={filteredRooms}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <RoomCard room={item} onPress={handleRoomPress} />
-        )}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={renderEmptyState}
-      />
-    </SafeAreaView>
+      {/* Filter Modal */}
+      <Modal visible={filterModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Bộ lọc phòng</Text>
+              <Pressable onPress={() => setFilterModalVisible(false)}>
+                <Text style={styles.closeButtonText}>Đóng</Text>
+              </Pressable>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              
+              <Text style={styles.filterSectionTitle}>Tòa nhà</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+                {BUILDINGS.map(b => (
+                  <Pressable 
+                    key={b} 
+                    style={[styles.chip, filterBuilding === b && styles.chipActive]}
+                    onPress={() => setFilterBuilding(b)}
+                  >
+                    <Text style={[styles.chipText, filterBuilding === b && styles.chipTextActive]}>
+                      {b === 'ALL' ? 'Tất cả' : `Tòa ${b}`}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.filterSectionTitle}>Trạng thái</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+                {['ALL', 'AVAILABLE', 'IN_USE', 'LOCKED'].map(s => {
+                  const label = s === 'ALL' ? 'Tất cả' : s === 'AVAILABLE' ? 'Có thể đặt' : s === 'IN_USE' ? 'Đang sử dụng' : 'Tạm khóa';
+                  return (
+                    <Pressable 
+                      key={s} 
+                      style={[styles.chip, filterStatus === s && styles.chipActive]}
+                      onPress={() => setFilterStatus(s as RoomStatus | 'ALL')}
+                    >
+                      <Text style={[styles.chipText, filterStatus === s && styles.chipTextActive]}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              <Text style={styles.filterSectionTitle}>Sức chứa nhóm (tối thiểu)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+                {CAPACITIES.map(c => (
+                  <Pressable 
+                    key={c} 
+                    style={[styles.chip, filterCapacity === c && styles.chipActive]}
+                    onPress={() => setFilterCapacity(c)}
+                  >
+                    <Text style={[styles.chipText, filterCapacity === c && styles.chipTextActive]}>
+                      {c === 0 ? 'Tất cả' : `${c} người`}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.filterSectionTitle}>Thiết bị yêu cầu</Text>
+              <View style={styles.equipmentsWrap}>
+                {EQUIPMENTS.map(eq => (
+                  <Pressable 
+                    key={eq} 
+                    style={[styles.chip, filterEquipments.includes(eq) && styles.chipActive]}
+                    onPress={() => toggleEquipment(eq)}
+                  >
+                    <Text style={[styles.chipText, filterEquipments.includes(eq) && styles.chipTextActive]}>{eq}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {isLoading ? (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="large" color="#1a73e8" />
+          <Text style={[styles.emptySubtitle, { marginTop: 12 }]}>Đang tải danh sách phòng...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>Lỗi kết nối</Text>
+          <Text style={styles.emptySubtitle}>{error}</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredRooms}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={renderEmptyState}
+        />
+      )}
+    </View>
   );
 };
 
@@ -120,77 +282,154 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   header: {
+    backgroundColor: '#ffffff',
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f3f4',
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#202124',
-    marginBottom: 16,
+    color: '#1a73e8',
+  },
+  navButtonsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  navButton: {
+    backgroundColor: '#e8f0fe',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  navButtonAlt: {
+    backgroundColor: '#f1f3f4',
+  },
+  navButtonText: {
+    color: '#1a73e8',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  navButtonTextAlt: {
+    color: '#5f6368',
+    fontWeight: '600',
+    fontSize: 14,
   },
   searchContainer: {
     marginBottom: 12,
   },
   searchInput: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e8eaed',
+    backgroundColor: '#f1f3f4',
     borderRadius: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 16,
     color: '#202124',
   },
-  filterContainer: {
+  quickFilterRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
+    alignItems: 'center',
   },
-  filterButton: {
-    paddingHorizontal: 14,
+  filterMenuButton: {
+    backgroundColor: '#1a73e8',
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e8eaed',
+    borderRadius: 8,
   },
-  filterButtonActive: {
-    backgroundColor: '#e8f0fe',
-    borderColor: '#d2e3fc',
-  },
-  filterText: {
-    fontSize: 14,
-    color: '#5f6368',
-    fontWeight: '500',
-  },
-  filterTextActive: {
-    color: '#1a73e8',
+  filterMenuButtonText: {
+    color: '#ffffff',
     fontWeight: 'bold',
   },
   listContainer: {
-    paddingBottom: 24,
-    flexGrow: 1,
+    paddingVertical: 8,
+    paddingBottom: 40,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 60,
-    paddingHorizontal: 32,
+    padding: 20,
   },
   emptyTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#3c4043',
     marginBottom: 8,
-    textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 14,
     color: '#5f6368',
     textAlign: 'center',
-    lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  closeButtonText: {
+    color: '#1a73e8',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  filterSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#5f6368',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  equipmentsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  chip: {
+    backgroundColor: '#f1f3f4',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+  },
+  chipActive: {
+    backgroundColor: '#e8f0fe',
+    borderColor: '#1a73e8',
+    borderWidth: 1,
+  },
+  chipText: {
+    color: '#5f6368',
+    fontSize: 14,
+  },
+  chipTextActive: {
+    color: '#1a73e8',
+    fontWeight: 'bold',
   },
 });

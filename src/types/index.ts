@@ -2,20 +2,26 @@ export interface Room {
   id: string;
   name: string;
   building: string;
-  floor: number;
+  campus?: string;
+  buildingCode?: "A" | "B" | "C" | "V";
+  floor?: number;
   capacity: number;
   facilities: string[];
-  available: boolean;
   imageUrl?: string;
+  available: boolean;
 }
 
 export interface Booking {
   id: string;
+  userId: string;
   roomId: string;
   roomName: string;
   date: string;
   startTime: string;
   endTime: string;
+  createdAt?: number;
+  bookingCode?: string;
+  checkedInAt?: number | object;
 }
 
 export type RootStackParamList = {
@@ -23,4 +29,12 @@ export type RootStackParamList = {
   RoomDetail: {
     room: Room;
   };
+  MyBookings: undefined;
+  Profile: undefined;
+  QRCheckIn: undefined;
+};
+
+export type AuthStackParamList = {
+  Login: undefined;
+  Register: undefined;
 };

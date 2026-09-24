@@ -1,13 +1,54 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { Image } from 'expo-image';
 import { Room } from '../types';
+import { RoomStatus } from '../utils/roomUtils';
 
 interface RoomCardProps {
   room: Room;
+  status: RoomStatus;
   onPress?: (room: Room) => void;
 }
 
-export const RoomCard: React.FC<RoomCardProps> = ({ room, onPress }) => {
+export const RoomCard: React.FC<RoomCardProps> = React.memo(({ room, status, onPress }) => {
+  const [imageError, setImageError] = React.useState(false);
+  
+  let statusText = '';
+  let statusBadgeStyle = {};
+  let statusTextStyle = {};
+
+  if (status === 'AVAILABLE') {
+    statusText = 'Có thể đặt';
+  } else if (status === 'IN_USE') {
+    statusText = 'Đang sử dụng';
+  } else {
+    statusText = 'Tạm khóa';
+  }
+
+  // Set badge colors based on status...
+  if (status === 'AVAILABLE') {
+    statusBadgeStyle = styles.statusAvailable;
+    statusTextStyle = styles.statusTextAvailable;
+  } else if (status === 'IN_USE') {
+    statusBadgeStyle = styles.statusInUse;
+    statusTextStyle = styles.statusTextInUse;
+  } else {
+    statusBadgeStyle = styles.statusLocked;
+    statusTextStyle = styles.statusTextLocked;
+  }
+
+  const getFallbackSource = () => {
+    if (room.id === 'LIBRARY') {
+      return require('../../assets/rooms/library.jpg');
+    }
+    if (room.id.startsWith('HALL')) {
+      return require('../../assets/rooms/hall.jpg');
+    }
+    // Checking for 'Máy tính' or lab facilities could go here, 
+    // but using classroom as default photographic fallback.
+    return require('../../assets/rooms/classroom.jpg');
+  };
+
   return (
     <Pressable
       style={({ pressed }) => [
@@ -16,34 +57,42 @@ export const RoomCard: React.FC<RoomCardProps> = ({ room, onPress }) => {
       ]}
       onPress={() => onPress && onPress(room)}
     >
-      <View style={styles.header}>
-        <Text style={styles.roomName}>{room.name}</Text>
-        <View style={[styles.statusBadge, room.available ? styles.statusAvailable : styles.statusBooked]}>
-          <Text style={[styles.statusText, room.available ? styles.statusTextAvailable : styles.statusTextBooked]}>
-            {room.available ? 'Có thể đặt' : 'Đã đặt'}
-          </Text>
-        </View>
-      </View>
-      
-      <Text style={styles.detailText}>🏢 {room.building} - Tầng {room.floor}</Text>
-      <Text style={styles.detailText}>👥 Sức chứa: {room.capacity} người</Text>
-      
-      <View style={styles.facilitiesContainer}>
-        {room.facilities.map((facility, index) => (
-          <View key={index} style={styles.facilityBadge}>
-            <Text style={styles.facilityText}>{facility}</Text>
+      <Image
+        style={styles.image}
+        source={room.imageUrl && !imageError ? { uri: room.imageUrl } : getFallbackSource()}
+        contentFit="cover"
+        transition={200}
+        onError={() => setImageError(true)}
+      />
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.roomName}>{room.name}</Text>
+          <View style={[styles.statusBadge, statusBadgeStyle]}>
+            <Text style={[styles.statusText, statusTextStyle]}>
+              {statusText}
+            </Text>
           </View>
-        ))}
+        </View>
+        
+        <Text style={styles.detailText}>🏢 {room.building} - Tầng {room.floor || 1}</Text>
+        <Text style={styles.detailText}>👥 {room.capacity} chỗ</Text>
+        
+        <View style={styles.facilitiesContainer}>
+          {room.facilities.map((facility, index) => (
+            <View key={index} style={styles.facilityBadge}>
+              <Text style={styles.facilityText}>{facility}</Text>
+            </View>
+          ))}
+        </View>
       </View>
     </Pressable>
   );
-};
+});
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#ffffff',
     borderRadius: 12,
-    padding: 16,
     marginVertical: 8,
     marginHorizontal: 16,
     shadowColor: '#000',
@@ -51,16 +100,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    overflow: 'hidden',
   },
   cardPressed: {
     opacity: 0.8,
     transform: [{ scale: 0.98 }],
   },
+  image: {
+    width: '100%',
+    height: 160,
+  },
+  content: {
+    padding: 16,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   roomName: {
     fontSize: 18,
@@ -75,7 +132,10 @@ const styles = StyleSheet.create({
   statusAvailable: {
     backgroundColor: '#e6f4ea',
   },
-  statusBooked: {
+  statusInUse: {
+    backgroundColor: '#fef7e0',
+  },
+  statusLocked: {
     backgroundColor: '#fce8e6',
   },
   statusText: {
@@ -85,25 +145,28 @@ const styles = StyleSheet.create({
   statusTextAvailable: {
     color: '#137333',
   },
-  statusTextBooked: {
+  statusTextInUse: {
+    color: '#b06000',
+  },
+  statusTextLocked: {
     color: '#c5221f',
   },
   detailText: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   facilitiesContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginTop: 8,
-    gap: 6, // Requires React Native 0.71+
+    gap: 6,
   },
   facilityBadge: {
     backgroundColor: '#f1f3f4',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 6,
   },
   facilityText: {
     fontSize: 12,
