@@ -109,17 +109,11 @@ Dữ liệu Realtime Database được tổ chức dưới dạng NoSQL, đảm 
 - `/bookings/{userId}/{bookingId}`: Danh sách lịch đặt phòng của từng sinh viên (Dùng để hiển thị My Bookings nhanh chóng).
 - `/roomSchedules/{roomId}/{date}/{bookingId}`: Chỉ mục quản lý lịch của từng phòng theo ngày. Được sử dụng bởi tính năng lọc Real-time để bóc tách các khung giờ còn trống và ngăn chặn trùng lịch (Double-booking).
 
-## 📱 Demo
-
-### Expo Go / Live Demo
-
-<EXPO_GO_QR_OR_LINK>
-*(This QR/link is used to open the Expo project with Expo Go.)*
 
 ### Video Demo
 
 <VIDEO_DEMO_LINK>
-*(2–3 minute physical-device demonstration of the reservation flow.)*
+(https://drive.google.com/file/d/1pp99tT2t-AuvZajrnYpW7EhhlCHRXpfa/view?usp=sharing)
 
 ## 🎥 Luồng Demo tham khảo (Demo Flow)
 
