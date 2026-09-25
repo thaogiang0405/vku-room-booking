@@ -19,6 +19,8 @@ export interface Booking {
   date: string;
   startTime: string;
   endTime: string;
+  actualEndTime?: string;
+  returnedEarly?: boolean;
   createdAt?: number;
   bookingCode?: string;
   checkedInAt?: number | object;

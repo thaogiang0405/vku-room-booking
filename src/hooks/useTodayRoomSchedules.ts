@@ -30,9 +30,16 @@ export const useTodayRoomSchedules = () => {
             extracted[roomId] = [];
           }
         }
-        setTodaySchedules(extracted);
+        
+        setTodaySchedules(prev => {
+          // Prevent unnecessary re-renders by doing a deep comparison
+          if (JSON.stringify(prev) === JSON.stringify(extracted)) {
+            return prev;
+          }
+          return extracted;
+        });
       } else {
-        setTodaySchedules({});
+        setTodaySchedules(prev => Object.keys(prev).length === 0 ? prev : {});
       }
     });
 

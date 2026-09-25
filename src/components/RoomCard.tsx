@@ -62,6 +62,7 @@ export const RoomCard: React.FC<RoomCardProps> = React.memo(({ room, status, onP
         source={room.imageUrl && !imageError ? { uri: room.imageUrl } : getFallbackSource()}
         contentFit="cover"
         transition={200}
+        cachePolicy="memory-disk"
         onError={() => setImageError(true)}
       />
       <View style={styles.content}>
@@ -103,8 +104,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   cardPressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.98 }],
+    opacity: 0.7,
   },
   image: {
     width: '100%',

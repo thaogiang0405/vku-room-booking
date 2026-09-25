@@ -270,6 +270,10 @@ export const BrowseRoomsScreen: React.FC = () => {
           contentContainerStyle={styles.listContainer}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={renderEmptyState}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={11}
+          removeClippedSubviews={true}
         />
       )}
     </View>

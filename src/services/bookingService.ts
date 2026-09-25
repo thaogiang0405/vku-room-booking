@@ -139,3 +139,24 @@ export const checkInBooking = async (userId: string, bookingId: string): Promise
   
   await update(ref(database), updates);
 };
+
+export const returnBookingEarly = async (booking: Booking, actualEndTime: string): Promise<void> => {
+  const updates: Record<string, any> = {};
+  
+  // 1. Update the user's booking record
+  updates[`${BOOKINGS_REF}/${booking.userId}/${booking.id}/actualEndTime`] = actualEndTime;
+  updates[`${BOOKINGS_REF}/${booking.userId}/${booking.id}/returnedEarly`] = true;
+  
+  // 2. Update the room schedule record's endTime to free up the room
+  updates[`${SCHEDULES_REF}/${booking.roomId}/${booking.date}/${booking.id}/endTime`] = actualEndTime;
+  
+  await update(ref(database), updates);
+  
+  // Try to cancel notification if any remains (though usually they fired 15m before start)
+  try {
+    await cancelBookingReminder(booking.id);
+  } catch (notifError) {
+    console.warn("[NOTIFICATION WARNING] Failed to cancel reminder on early return:", notifError);
+  }
+};
+

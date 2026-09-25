@@ -112,22 +112,31 @@ export const QRCheckInScreen: React.FC<Props> = ({ navigation }) => {
 
       // 5. Validate Date/Time
       const now = new Date();
+      
+      const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      if (todayIso !== firebaseBooking.date) {
+        throw new Error('Không phải ngày check-in của lịch đặt này.');
+      }
+
       const [year, month, day] = firebaseBooking.date.split('-').map(Number);
       const [startH, startM] = firebaseBooking.startTime.split(':').map(Number);
       const [endH, endM] = firebaseBooking.endTime.split(':').map(Number);
       
-      const startTime = new Date(year, month - 1, day, startH, startM);
-      const endTime = new Date(year, month - 1, day, endH, endM);
+      const bookingStart = new Date(year, month - 1, day, startH, startM);
+      const bookingEnd = new Date(year, month - 1, day, endH, endM);
+      
+      const checkInStart = new Date(bookingStart.getTime() - 15 * 60 * 1000);
 
-      // Check date (must be today, or specifically around the time)
-      if (now.getTime() < startTime.getTime()) {
-        Alert.alert('Lỗi', 'Chưa đến thời gian check-in.', [
+      // Check time eligibility
+      if (now.getTime() < checkInStart.getTime()) {
+        const formatTime = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        Alert.alert('Lỗi', `Chưa đến giờ check-in. Bạn có thể check-in từ ${formatTime(checkInStart)}.`, [
           { text: 'OK', onPress: () => setIsProcessing(false) }
         ]);
         return;
       }
 
-      if (now.getTime() >= endTime.getTime()) {
+      if (now.getTime() >= bookingEnd.getTime()) {
         Alert.alert('Lỗi', 'Đã quá thời gian check-in.', [
           { text: 'OK', onPress: () => setIsProcessing(false) }
         ]);
